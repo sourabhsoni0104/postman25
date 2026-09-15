@@ -77,7 +77,7 @@ def main():
               f"decode/tok x{r['rel_decode_time']:.2f} KV mem x{r['rel_kv_memory']:.3f} "
               f"peak(excl. weights) {'x%.2f' % pk if pk is not None else 'n/a (CPU)'}")
 
-    save_json({"hardware": hw, "n_tokens": args.n_tokens, "n_decode": args.n_decode,
+    save_json({"hardware": hw, "model": args.model, "device": str(model.device), "n_tokens": args.n_tokens, "n_decode": args.n_decode,
                "chunk_size": args.chunk_size, "dtype": str(model.dtype), "rows": rows},
               "results/benchmark.json")
 

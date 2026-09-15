@@ -1,0 +1,33 @@
+model=Qwen/Qwen2.5-0.5B-Instruct device=mps:0 dtype=torch.float16 N=96
+
+[PASS] rope: score depends only on q_pos - k_pos  (same-dist diff=3.93e-06)
+[PASS] manual forward == HF eager (N=96)  (max|diff|=4.69e-02 tol=0.05)
+[PASS] rope_mode=stale == HF when no eviction  (max|diff|=4.69e-02)
+[PASS] rope_mode=absolute == HF when no eviction  (max|diff|=4.69e-02)
+[PASS] chunked prefill (chunk=1) == HF chunked  (matched diff=4.30e-02; HF chunk/full drift=1.54e-01; manual chunk/full=1.54e-01)
+[PASS] chunked prefill (chunk=7) == HF chunked  (matched diff=3.91e-02; HF chunk/full drift=1.54e-01; manual chunk/full=1.54e-01)
+[PASS] chunked prefill (chunk=64) == HF chunked  (matched diff=4.30e-02; HF chunk/full drift=3.91e-02; manual chunk/full=4.69e-02)
+[PASS] h2o: accumulated score == column sums of attention probs
+[PASS] sliding keeps last `budget` entries
+[PASS] streaming keeps 4 sinks + 4 most recent
+[PASS] h2o keeps per-head heavy hitters + recent, sorted
+[PASS] evict(): tensors compacted to budget
+[PASS] budget respected after streaming (sliding)  (T=24)
+[PASS] budget respected after streaming (streaming(sink=4))  (T=24)
+[PASS] budget respected after streaming (h2o(recent=0.5))  (T=24)
+[PASS] stale == recompute before any eviction
+[PASS] stale != recompute after eviction (bug is real)
+[FAIL] recompute == absolute for contiguous-suffix eviction  (max|diff|=2.25e-01, tolerance=0.05)
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/Users/sourabh/Downloads/postmantask/kv-cache-compression/tests/test_correctness.py", line 204, in <module>
+    main()
+  File "/Users/sourabh/Downloads/postmantask/kv-cache-compression/tests/test_correctness.py", line 192, in main
+    test_recompute_rope_after_eviction(model, ids)
+  File "/Users/sourabh/Downloads/postmantask/kv-cache-compression/tests/test_correctness.py", line 160, in test_recompute_rope_after_eviction
+    check("recompute == absolute for contiguous-suffix eviction", diff < tolerance,
+  File "/Users/sourabh/Downloads/postmantask/kv-cache-compression/tests/test_correctness.py", line 27, in check
+    assert ok, f"{name}: {detail}"
+           ^^
+AssertionError: recompute == absolute for contiguous-suffix eviction: max|diff|=2.25e-01, tolerance=0.05

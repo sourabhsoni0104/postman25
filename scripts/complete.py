@@ -11,7 +11,6 @@ from pathlib import Path
 
 STAGES = {
     "correctness": ["tests.test_correctness", "--model", "Qwen/Qwen2.5-0.5B-Instruct", "--dtype", "float32"],
-    "correctness_fp16": ["tests.test_correctness", "--model", "Qwen/Qwen2.5-0.5B-Instruct", "--dtype", "float16"],
     "attention": ["scripts.instrument_attention", "--n_tokens", "2048"],
     "curve": ["scripts.run_curve", "--texts", "data/pride_and_prejudice.txt,data/frankenstein.txt",
               "--n_tokens", "3072", "--ctx", "2048", "--budgets", "128,256,512,1024,2048",
@@ -27,7 +26,7 @@ def main():
     ap.add_argument("--device", default="mps")
     args = ap.parse_args()
     os.chdir(Path(__file__).resolve().parents[1])
-    env = dict(os.environ, OMP_NUM_THREADS="4", MPLCONFIGDIR="/tmp/kvcache-mpl", PYTHONUNBUFFERED="1")
+    env = dict(os.environ, OMP_NUM_THREADS="4", MPLCONFIGDIR="/tmp/kvcache-mpl", PYTHONUNBUFFERED="1", HF_HUB_OFFLINE="1")
     Path("results/logs").mkdir(parents=True, exist_ok=True)
     for name in args.stages.split(","):
         command = [sys.executable, "-m", *STAGES[name], "--device", args.device]

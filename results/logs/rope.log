@@ -1,0 +1,6 @@
+Token indices sequence length is longer than the specified maximum sequence length for this model (164270 > 131072). Running this sequence through the model will result in indexing errors
+recompute  ppl_post=16.704  niah=1.00 {'0.9': 1.0, '0.95': 1.0, '0.98': 1.0}
+absolute   ppl_post=16.711  niah=1.00 {'0.9': 1.0, '0.95': 1.0, '0.98': 1.0}
+stale      ppl_post=275.001  niah=0.00 {'0.9': 0.0, '0.95': 0.0, '0.98': 0.0}
+saved results/rope_ablation.json
+saved plots/rope_ablation.png

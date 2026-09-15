@@ -1,0 +1,79 @@
+{
+  "model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "device": "mps:0",
+  "dtype": "torch.float32",
+  "checks": [
+    {
+      "name": "rope: score depends only on q_pos - k_pos",
+      "passed": true
+    },
+    {
+      "name": "manual forward == HF eager (N=96)",
+      "passed": true
+    },
+    {
+      "name": "rope_mode=stale == HF when no eviction",
+      "passed": true
+    },
+    {
+      "name": "rope_mode=absolute == HF when no eviction",
+      "passed": true
+    },
+    {
+      "name": "chunked prefill (chunk=1) == full prefill",
+      "passed": true
+    },
+    {
+      "name": "chunked prefill (chunk=7) == full prefill",
+      "passed": true
+    },
+    {
+      "name": "chunked prefill (chunk=64) == full prefill",
+      "passed": true
+    },
+    {
+      "name": "h2o: accumulated score == column sums of attention probs",
+      "passed": true
+    },
+    {
+      "name": "sliding keeps last `budget` entries",
+      "passed": true
+    },
+    {
+      "name": "streaming keeps 4 sinks + 4 most recent",
+      "passed": true
+    },
+    {
+      "name": "h2o keeps per-head heavy hitters + recent, sorted",
+      "passed": true
+    },
+    {
+      "name": "evict(): tensors compacted to budget",
+      "passed": true
+    },
+    {
+      "name": "budget respected after streaming (sliding)",
+      "passed": true
+    },
+    {
+      "name": "budget respected after streaming (streaming(sink=4))",
+      "passed": true
+    },
+    {
+      "name": "budget respected after streaming (h2o(recent=0.5))",
+      "passed": true
+    },
+    {
+      "name": "stale == recompute before any eviction",
+      "passed": true
+    },
+    {
+      "name": "stale != recompute after eviction (bug is real)",
+      "passed": true
+    },
+    {
+      "name": "recompute == absolute for contiguous-suffix eviction",
+      "passed": true
+    }
+  ]
+}

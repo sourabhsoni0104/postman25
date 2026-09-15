@@ -1,0 +1,13 @@
+hardware: {'platform': 'macOS-26.6.2-arm64-arm-64bit', 'python': '3.11.15', 'torch': '2.8.0', 'cpu': 'arm', 'cpu_count': 12, 'cuda': False, 'mps': True}
+full       budget=None   prefill x1.00 decode/tok x1.00 KV mem x1.000 peak(excl. weights) n/a (CPU)
+sliding    budget=128    prefill x0.55 decode/tok x0.44 KV mem x0.031 peak(excl. weights) n/a (CPU)
+streaming  budget=128    prefill x0.59 decode/tok x0.43 KV mem x0.031 peak(excl. weights) n/a (CPU)
+h2o        budget=128    prefill x0.63 decode/tok x0.50 KV mem x0.031 peak(excl. weights) n/a (CPU)
+sliding    budget=512    prefill x0.65 decode/tok x0.44 KV mem x0.124 peak(excl. weights) n/a (CPU)
+streaming  budget=512    prefill x0.68 decode/tok x0.51 KV mem x0.124 peak(excl. weights) n/a (CPU)
+h2o        budget=512    prefill x0.78 decode/tok x0.56 KV mem x0.124 peak(excl. weights) n/a (CPU)
+sliding    budget=2048   prefill x0.90 decode/tok x0.81 KV mem x0.496 peak(excl. weights) n/a (CPU)
+streaming  budget=2048   prefill x0.94 decode/tok x0.59 KV mem x0.496 peak(excl. weights) n/a (CPU)
+h2o        budget=2048   prefill x0.94 decode/tok x0.58 KV mem x0.496 peak(excl. weights) n/a (CPU)
+saved results/benchmark.json
+saved plots/benchmark.png

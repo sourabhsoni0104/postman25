@@ -1,0 +1,51 @@
+Token indices sequence length is longer than the specified maximum sequence length for this model (164270 > 131072). Running this sequence through the model will result in indexing errors
+== full cache reference
+   ppl=17.686  niah=1.00
+saved results/curve.json
+== sliding budget=128
+   ppl=157.430 niah=0.00 {'0.1': 0.0, '0.5': 0.0, '0.9': 0.0}
+saved results/curve.json
+== streaming budget=128
+   ppl=21.833 niah=0.00 {'0.1': 0.0, '0.5': 0.0, '0.9': 0.0}
+saved results/curve.json
+== h2o budget=128
+   ppl=21.700 niah=0.00 {'0.1': 0.0, '0.5': 0.0, '0.9': 0.0}
+saved results/curve.json
+== sliding budget=256
+   ppl=110.005 niah=0.33 {'0.1': 0.0, '0.5': 0.0, '0.9': 1.0}
+saved results/curve.json
+== streaming budget=256
+   ppl=20.611 niah=0.33 {'0.1': 0.0, '0.5': 0.0, '0.9': 1.0}
+saved results/curve.json
+== h2o budget=256
+   ppl=20.091 niah=0.00 {'0.1': 0.0, '0.5': 0.0, '0.9': 0.0}
+saved results/curve.json
+== sliding budget=512
+   ppl=81.188 niah=0.00 {'0.1': 0.0, '0.5': 0.0, '0.9': 0.0}
+saved results/curve.json
+== streaming budget=512
+   ppl=19.696 niah=0.33 {'0.1': 0.0, '0.5': 0.0, '0.9': 1.0}
+saved results/curve.json
+== h2o budget=512
+   ppl=18.676 niah=0.33 {'0.1': 0.0, '0.5': 0.0, '0.9': 1.0}
+saved results/curve.json
+== sliding budget=1024
+   ppl=68.586 niah=0.17 {'0.1': 0.0, '0.5': 0.5, '0.9': 0.0}
+saved results/curve.json
+== streaming budget=1024
+   ppl=18.941 niah=0.67 {'0.1': 0.0, '0.5': 1.0, '0.9': 1.0}
+saved results/curve.json
+== h2o budget=1024
+   ppl=18.063 niah=0.33 {'0.1': 0.0, '0.5': 0.0, '0.9': 1.0}
+saved results/curve.json
+== sliding budget=2048
+   ppl=355.025 niah=1.00 {'0.1': 1.0, '0.5': 1.0, '0.9': 1.0}
+saved results/curve.json
+== streaming budget=2048
+   ppl=17.954 niah=1.00 {'0.1': 1.0, '0.5': 1.0, '0.9': 1.0}
+saved results/curve.json
+== h2o budget=2048
+   ppl=17.729 niah=1.00 {'0.1': 1.0, '0.5': 1.0, '0.9': 1.0}
+saved results/curve.json
+saved results/curve.json
+saved plots/quality_vs_memory.png

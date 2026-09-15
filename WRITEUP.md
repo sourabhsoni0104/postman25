@@ -1,167 +1,216 @@
-# Attention-Aware KV Cache Compression — Writeup
+# Attention-Aware KV Cache Compression
 
-Model: Qwen2.5-0.5B (24 layers, 14 query heads, 2 KV heads, head dim 64, RoPE θ=10⁶).
-Hardware: `[FILL from results/benchmark.json → hardware]`.
-All numbers below come from `results/*.json`; plots from `plots/`.
+## What this submission establishes
 
-> Everything in `[FILL …]` is to be replaced with your measured numbers.
-> Where I wrote "if X, say Y", keep only the branch that matches your results.
+This project compares three ways to retain a bounded transformer KV cache:
+a sliding window, an explicit sink-plus-window policy, and accumulated-attention
+heavy hitters. It uses Qwen2.5-0.5B-Instruct rather than random weights for the
+quality experiments. The random tiny model is only a correctness fixture.
 
-## 1. What I built
+The numerical tables, hardware details, attention summaries, and plots are in
+[the measured report](results/REPORT.md), generated directly from saved JSON.
+Individual retrieval responses, per-head retention, document hashes, complete
+loss traces, and parameters remain available for inspection.
 
-I re-implemented the Qwen2 decoder forward pass on top of the HuggingFace weights
-(`kvcache/model.py`) so that the KV cache is a plain tensor I control. The
-correctness harness (`tests/test_correctness.py`) checks that the manual
-forward reproduces HF's eager logits (max |Δ| = `[FILL]` in fp32, `[FILL]` in fp16)
-and that chunked prefill equals a single prefill. On top of that: three eviction
-policies, three ways of handling positions after eviction, attention
-instrumentation, and two quality evaluations.
+## 3.1 Model and correctness
 
-## 2. Attention is concentrated, and the first tokens absorb it (3.2)
+The manual Qwen2 forward reuses the Hugging Face embeddings, attention projections,
+MLP, normalization, and output weights. Its attention callback exposes each
+layer's probability tensor; the custom cache exposes keys, values, original
+token positions, and cumulative scores. The original HF model remains available
+as `model.hf`, including its `past_key_values` interface.
 
-`scripts/instrument_attention.py` runs a 2048-token prefill and records, per
-layer/head, (a) the share of each query's attention that lands on the first 4
-tokens, (b) the fraction of available keys needed to cover 90% of the mass, and
-(c) the mean attention each key position receives. I ran it on real text and on
-uniformly random token ids as a control.
+The reference harness checks full and chunked logits against HF eager attention,
+all three position modes before eviction, score accumulation, and policy indices.
+Regression tests additionally check the bound during attention, per-layer
+capacities, exact teacher-forcing alignment, invalid inputs, and an independent
+RoPE re-rotation identity.
 
-* Mean sink share (mass on tokens 0–3): `[FILL]` on text, `[FILL]` on random ids
-  (`plots/sink_share_heatmap.png`). Layers `[FILL: which layers/heads are the
-  strongest sinks]` put more than half of their mass there.
-* 90% of the mass is covered by `[FILL]`% of available keys on average
-  (`plots/attention_concentration.png`), i.e. most keys are almost never read.
-* Tokens 0–3 receive `[FILL]`× more attention than a uniform distribution would
-  give them, and the same is true for random ids (`plots/attention_received_by_position.png`).
+FP32 is the validated Apple GPU configuration. In an exploratory FP16 run,
+HF itself differed between chunked and full prefill by up to 0.154 in logits;
+matching chunk sizes reduced manual-versus-HF error below 0.05. However, the
+contiguous-position-shift check still differed by 0.225, so FP16 was excluded
+from the reported experiments. Numerical tolerance is not a quality guarantee.
 
-The random-token control is the key result: the first tokens get the mass **regardless of what they are**.
-That is the empirical fact any eviction policy has to respect.
+## 3.2 Instrument attention before choosing an eviction policy
 
-## 3. Eviction policies (3.3)
+For each of 24 layers and 14 query heads, the instrumentation measures:
 
-* **Sliding window** — keep the last `B` tokens. Baseline.
-* **StreamingLLM** — keep the first 4 tokens (sinks) + the last `B−4`.
-* **H2O** — keep the last `B/2` tokens + the `B/2` tokens with the highest
-  accumulated attention score, chosen independently per KV head. Scores are the
-  column sums of the attention matrix, accumulated across all steps.
+- Attention mass landing on the first four keys, using only queries at index 64
+  or later to avoid the trivial early-query effect.
+- The minimum fraction of causally available keys covering 90% of a query's mass.
+- Attention entropy and mean attention received by each key position.
 
-## 4. Positions after eviction (3.4)
+It streams an uncompressed 2,048-token context in blocks, avoiding a full
+all-layer attention-matrix allocation. Four controlled inputs are compared:
+natural prose, uniformly random IDs including the prefix, shuffled prose, and
+the same prose with only its first four IDs replaced.
 
-RoPE rotates q and k by an angle proportional to position; the score depends only
-on `pos_q − pos_k` (verified in the harness). HF caches *rotated* keys and sets the
-next query position to the current cache length. If you evict from the middle and
-carry on, the query is rotated as though the cache were contiguous while the old
-keys still carry their original rotations: the relative distances the model sees are
-wrong, but nothing crashes and text stays fluent. I implemented this bug on purpose
-as `rope_mode="stale"` and compare it with:
+The null baseline is **causal uniform attention**, not a flat 1/N line.
+A key near the beginning is available to more queries even under uniform
+attention. For a query at zero-based position q, the uniform mass per available
+key is 1/(q+1). Averaging that baseline over the exact measured query set
+separates learned sinks from simple exposure.
 
-* `recompute` (mine, correct): cache pre-RoPE keys; at every step rotate the
-  compacted cache with positions 0..T−1 and the query with T−1. Distances are
-  always consistent and never exceed the budget.
-* `absolute`: rotate with original token indices (correct distances with gaps,
-  but positions grow without bound).
+Layer/head heatmaps and numeric control results are in the report. Persistence
+after prefix replacement supports content-insensitive sink behavior in these
+inputs; a finite set of controls cannot establish independence for every possible
+content. Global means can conceal heads that specialize in different patterns.
 
-`scripts/rope_ablation.py` (StreamingLLM, budget 512, 4096-token doc, needle at
-depth 0.90–0.98 so it *stays inside the recent window*):
+## 3.3 Policies and a fixed budget
 
-| mode | PPL post-budget | needle accuracy |
-|---|---|---|
-| recompute | `[FILL]` | `[FILL]` |
-| absolute | `[FILL]` | `[FILL]` |
-| stale | `[FILL]` | `[FILL]` |
+**Sliding window:** retain the newest available entries. It removes the initial
+sinks once the window advances, and also removes older facts.
 
-`[FILL: expected pattern — stale has modestly higher PPL but retrieval of a needle
-that is physically in the cache collapses; this is the "invisible without a targeted
-evaluation" failure. If absolute also degrades at long contexts, say so: positions
-exceed what the budget alone would produce.]`
+**Sink-aware, StreamingLLM-style:** protect the original first four entries and
+use the remaining capacity for recent context. This stabilizes attention but
+does not provide durable memory of the document's middle.
 
-## 5. Quality under a fixed budget (3.5, 3.6)
+**Heavy-hitter, H2O-style:** combine recent entries with entries receiving the
+largest accumulated attention mass. Query-head scores sharing a KV head are
+summed. Each KV head selects its own entries in each layer; surviving indices
+are sorted chronologically. Ties are deterministic and favor older entries.
 
-Perplexity is measured on `[FILL: document]` (6144 tokens) and reported on the
-tokens after the first eviction. Needle-in-a-haystack uses a 2048-token context
-with a 5-digit passkey at depths 0.1–0.9, `[FILL]` trials each.
+The implementation reserves space for a whole incoming block before attention.
+Thus B includes the new keys, and no layer's cache grows to B plus a block.
+The remaining capacity B minus block length is divided according to the policy;
+new entries then receive their initial scores. This is a block approximation,
+not a claim of reproducing the papers' exact kernels. With block size 1 it makes
+online decisions. Every policy in the measured sweep uses the same block size.
 
-`plots/quality_vs_memory.png`, from `results/curve.json`:
+## 3.4 Position handling after eviction
 
-| budget | KV MB | sliding PPL / NIAH | streaming PPL / NIAH | h2o PPL / NIAH |
-|---|---|---|---|---|
-| full | `[FILL]` | `[FILL]` | | |
-| 128 | | | | |
-| 256 | | | | |
-| 512 | | | | |
-| 1024 | | | | |
-| 2048 | | | | |
+RoPE rotates queries and keys with their position. Its inner product depends on
+the difference of those positions. Eviction alone does not necessarily invalidate
+RoPE: original positions remain valid if both queries and retained keys use them
+consistently.
 
-What the two metrics show:
+There are two internally consistent choices:
 
-* **Sliding window** `[FILL: should visibly fail — PPL jumps by orders of magnitude
-  the moment tokens 0–3 are evicted. Say exactly when: at the first eviction after
-  `budget` tokens.]`
-* **StreamingLLM** `[FILL: PPL should stay close to full-cache PPL at every budget
-  — while needle accuracy is ~0 for any depth outside the recent window. This is the
-  point of 3.5: perplexity barely moves, the fact is gone.]`
-* **H2O** `[FILL: PPL close to streaming; needle accuracy depends on whether the
-  needle tokens accumulated enough score during the filler to survive — report the
-  per-depth numbers. If h2o also dropped the needle, explain: a passkey nobody
-  refers to during prefill earns little attention mass, so a score-based policy has
-  no reason to keep it until the question arrives — too late.]`
+1. **Absolute:** preserve each token's original position, including gaps.
+2. **Recompute/compact:** store pre-RoPE keys and rotate retained entries at
+   contiguous cache indices 0 through T-1; rotate new queries at the matching
+   final indices. This is the StreamingLLM-style bounded-position convention.
 
-Memory scales linearly with the budget: `2 × 24 layers × 2 KV heads × 64 × B ×
-2 bytes = 12 KB × B`, i.e. 6 MB at B=512 vs `[FILL]` MB for the 6144-token full cache.
+Compaction changes distances across deleted gaps; it does not reproduce the
+full-context model or recompute historical hidden states. It only makes the
+chosen positional convention consistent. Absolute positions can eventually leave
+the model's trained range; that is not established by these short experiments.
 
-## 6. Benchmark
+The deliberate **stale** bug caches post-RoPE keys at their insertion-time cache
+positions, then reuses them after eviction while rotating new queries at compact
+positions. This models naive slicing code that also resets position IDs; it is
+not an assertion that every Hugging Face cache implementation has this bug.
 
-`results/benchmark.json`, `plots/benchmark.png`, on `[FILL hardware]`, 8192
-tokens streamed + 64 decode steps, fp16. Relative to the full cache: decode time
-per token `[FILL]`× at budget 256 and `[FILL]`× at 1024; final KV memory `[FILL]`×
-and `[FILL]`×. `[FILL: note that per-token decode with a full 8k cache is dominated
-by attention over 8k keys, so a 256-entry cache is measurably faster; note also
-the cost of re-rotating the whole cache every step in `recompute` mode — O(B·d),
-negligible next to attention itself.]`
+An independent identity checks that rotating a retained key by the difference
+between new and old positions equals rotating its raw key at the new position.
+The learned-model ablation runs identical prompts, policy, budget, and passkeys
+under all three modes. Needles are near the end and must be completely present
+in **every layer and KV head before decoding**. The script fails if eviction
+confounds this comparison. Full-cache retrieval is the capability control.
 
-## 7. Discussion (3.7)
+The report gives the actual PPL and retrieval outcomes. Fluent output alone
+cannot validate RoPE; even equal retrieval accuracy on a small set does not
+replace the positional identity test.
 
-**Why attention sinks exist.** Softmax forces every row to sum to 1. When a head
-has nothing useful to attend to for a given query — which is most of the time,
-since attention is sparse — the excess mass has to go somewhere. During training,
-the first token is the only position that is visible to *every* query, so it is the
-one place a head can reliably park unwanted mass; the model learns to give it a
-key that scores highly for almost any query while its value carries little
-information. The random-token control in §2 confirms it is a positional
-convention, not a content effect. Evicting the sink removes the dumping ground,
-the mass gets redistributed over content tokens that were never meant to receive
-it, and the residual stream is corrupted — hence the sliding-window collapse.
+## 3.5–3.6 Quality versus memory
 
-**Why accumulated-score eviction is biased toward early tokens.** H2O ranks a
-token by the total attention it has received. A token at position `p` has been
-a candidate key for every query after `p`, so it has had `T − p` chances to
-collect mass; a token inserted 10 steps ago has had 10. The score is a sum,
-not a rate, so all else being equal older tokens win. Combined with the sink
-effect (tokens 0–3 receive a large share of *every* row) this means the heavy
-hitters are dominated by early tokens, and genuinely informative but recent
-tokens only survive because of the explicit recent window. Normalising by age
-would fix the bias but break the sink retention that makes H2O work at all — the
-bias is, in part, doing the job of StreamingLLM's explicit sink rule.
+Perplexity is evaluated on prose from *Pride and Prejudice* and *Frankenstein*,
+3,072 tokens each. Every curve point, including full cache, scores the same
+suffix beginning at query index 2,048, after every tested budget can evict.
+Negative log-likelihoods are pooled by prediction count before exponentiation;
+document perplexities are not averaged. Complete loss traces also show the
+transition around first eviction.
 
-**Which policy for which workload.**
+NIAH places a five-digit passkey in exactly 2,048 prompt tokens, at depths
+0.1, 0.5, and 0.9 of the filler, using two paired keys at each depth.
+It greedily completes an explicit passkey question; the first returned digit
+sequence must equal the key. A random answer containing the key somewhere else
+does not pass. This is a completion prompt, not a chat-template benchmark.
 
-* *Multi-turn agent*: the history is long, the facts that matter (tool outputs,
-  user constraints, earlier decisions) are scattered through the middle, and the
-  next query is unknown at eviction time. A pure recency policy (sliding /
-  StreamingLLM) throws away exactly those facts — §5 shows the needle vanishing
-  while perplexity looks fine. H2O-style score-based retention is the better default
-  because tokens that were referred to once tend to be referred to again, but it
-  should be combined with a guaranteed sink set, a recent window, and ideally
-  per-head budgets; and the *effective* budget needs to be generous, because
-  score-based eviction cannot anticipate a fact that has not been used yet.
-* *Long-document summariser*: the model reads once, front to back, and the
-  question ("summarise") is known up front. Local coherence matters more than
-  random access, throughput matters, and the summary is generated after the
-  whole document has been read. StreamingLLM (sinks + recent window) is the right
-  tool: near-full-cache perplexity at a tiny fixed budget, simplest possible
-  eviction (no score bookkeeping, same indices for every head), and constant
-  memory. If specific facts must survive, chunk the document and summarise
-  hierarchically rather than trying to keep them in the cache.
+The full-cache run measures whether this small model can solve the task.
+Per-trial output and exact needle-retention fractions distinguish model
+limitations, eviction, and position effects. The synthetic filler repeats,
+and six paired trials per configuration are a small correlated sample; the
+saved Wilson intervals are descriptive. Strong generalization claims would
+require more keys, diverse fillers, and multiple models.
 
-**Limitations / honest notes.** Batch size 1; eviction during prefill happens
-every `chunk_size` tokens rather than every token; H2O uses raw cumulative
-scores without decay; `[FILL: anything else you changed or could not finish]`.
+All policies are compared at budgets 128, 256, 512, 1,024, and 2,048.
+KV bytes equal:
+
+```text
+2 (K,V) × 24 layers × 2 KV heads × 64 head dimensions × B × dtype bytes
+```
+
+In FP32 this is 24 KiB per token: 12 MiB for B=512, compared with 72 MiB for a
+3,072-token full document cache. Position IDs and FP32 scores add 576 bytes per
+token across layers. Model weights, tensor-copy overlap, repeated-head attention
+buffers, and logits are outside this accounting. The persistent cache bound
+does not imply an equally tight total-process memory bound.
+
+The plot's full-cache PPL memory corresponds to documents, while NIAH has a
+different prompt length. Decode steps also add entries to the unbounded
+reference. Measured cache maxima and metadata bytes are saved alongside the
+theoretical curve coordinates.
+
+## 3.7 Why sinks exist, and what to use
+
+**Why initial tokens become sinks.** Softmax normalizes every attention row to
+unit mass. A head can learn a reliable place to send attention that does not
+contribute useful task information. Initial positions are visible to nearly all
+later queries, making them stable candidates. Removing these learned anchors
+can redistribute mass and change later activations. This is the interpretation
+behind StreamingLLM, supported here by prefix and content controls; softmax
+normalization alone does not mathematically require sinks.
+[StreamingLLM paper](https://arxiv.org/abs/2309.17453)
+
+**Why accumulated scores favor older entries.** The raw score is a sum over
+queries since insertion. A key present for 1,000 queries has more opportunities
+to accumulate mass than a key present for ten, even at the same average mass per
+query. Sink behavior compounds this exposure bias. The protected recent window
+gives new tokens time to collect evidence, but a fact receiving little attention
+can still disappear before the eventual question reveals its importance.
+Age normalization or decay reduces historical inertia but also changes sink
+retention; explicit sink protection can be combined with either.
+[H2O paper](https://arxiv.org/abs/2306.14048)
+
+**Multi-turn agents.** Among these three, sink-aware streaming is a simple
+baseline for stable local continuation; H2O-style retention is more suitable
+when previously attended information is likely to matter again. A practical
+agent should protect sinks and recent context while retaining important older
+entries. Neither policy guarantees future recall. Tool results, constraints,
+and decisions needing durable memory should also be stored externally and
+retrieved or summarized back into context. That is an architectural recommendation,
+not a workload directly evaluated by the passkey test.
+
+**Long-document summarizers.** A sink-plus-recent cache can preserve local
+perplexity while discarding the opening and middle of a document. That makes it
+an unsafe default for a faithful, end-of-document summary. Prefer the full cache
+when feasible, or hierarchical chunk summaries with explicit coverage and fact
+retention. If forced to select one of these compressed policies, H2O is a
+reasonable candidate to test because it can retain nonrecent content, but
+attention popularity is not summary importance. Validate coverage and factual
+recall directly; perplexity does not measure either. StreamingLLM is suitable
+for producing local chunk summaries when a separate mechanism combines them.
+
+## Limits and stretch work
+
+The implementation is research code for one Qwen2 sequence, with eager attention
+and a block eviction approximation. It is not an optimized serving engine.
+Post-eviction hidden states still encode the context available when created.
+The retrieval benchmark has repeated filler, few keys, and no multi-turn or
+summarization task evaluation. Timing is one warmed-up run using a repeated
+decode token, not a production throughput claim.
+
+Per-KV-head token selection and unequal per-layer capacities are implemented and
+tested. Unequal capacities between heads within a layer, learned allocation,
+and a quality study of budget allocation remain outside the required deliverables;
+the stretch is therefore partial. The FP16 exploration failed a positional
+numerical tolerance check and is explicitly excluded from the reported results.
+
+## Reproduction
+
+See [README.md](README.md). Run `bash run_all.sh` for the measured configuration.
+`scripts.complete` records stage logs, `run_curve` saves completed configurations
+incrementally, and `scripts.report` renders tables and diagnostic plots only
+after the sweep is complete.
