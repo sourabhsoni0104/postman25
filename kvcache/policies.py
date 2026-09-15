@@ -21,6 +21,10 @@ class EvictionPolicy:
     def keep_indices(self, lc: LayerKV, budget: int) -> torch.Tensor:
         raise NotImplementedError
 
+    def min_retained(self, budget: int) -> int:
+        """Old entries that must survive a chunk reservation; caps the chunk size."""
+        return 0
+
     def __repr__(self):
         return self.name
 
@@ -49,6 +53,9 @@ class StreamingLLM(EvictionPolicy):
         self.n_sink = n_sink
         self.name = f"streaming(sink={n_sink})"
 
+    def min_retained(self, budget):
+        return self.n_sink
+
     def keep_indices(self, lc, budget):
         Hkv, T = lc.pos.shape
         dev = lc.pos.device
@@ -68,6 +75,11 @@ class H2O(EvictionPolicy):
             raise ValueError("recent_ratio must be between 0 and 1")
         self.recent_ratio = recent_ratio
         self.name = f"h2o(recent={recent_ratio})"
+
+    def min_retained(self, budget):
+        # A chunk as large as the budget would evict to zero entries and erase
+        # every heavy hitter; keep at least half the budget across reservations.
+        return budget // 2
 
     def keep_indices(self, lc, budget):
         Hkv, T = lc.pos.shape

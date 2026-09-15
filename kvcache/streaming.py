@@ -24,7 +24,7 @@ class StreamingRunner:
         if not isinstance(self.policy, NoEviction):
             if any(b is None for b in self.layer_budgets):
                 raise ValueError("an eviction policy requires a budget for every layer")
-            if any(b <= getattr(self.policy, "n_sink", 0) for b in self.layer_budgets):
+            if any(b <= self.policy.min_retained(b) for b in self.layer_budgets):
                 raise ValueError("budget must leave space beyond the protected sinks")
         self.reset()
 
@@ -40,7 +40,7 @@ class StreamingRunner:
         if cs < 1:
             raise ValueError("chunk_size must be positive")
         if not isinstance(self.policy, NoEviction):
-            cs = min(cs, min(self.layer_budgets) - getattr(self.policy, "n_sink", 0))
+            cs = min(cs, min(b - self.policy.min_retained(b) for b in self.layer_budgets))
         return cs
 
     def _reserve(self, incoming):

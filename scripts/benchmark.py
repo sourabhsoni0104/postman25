@@ -75,7 +75,7 @@ def main():
         pk = r["rel_peak_mem_excl_weights"]
         print(f"{r['policy']:10s} budget={str(r['budget']):6s} prefill x{r['rel_prefill_time']:.2f} "
               f"decode/tok x{r['rel_decode_time']:.2f} KV mem x{r['rel_kv_memory']:.3f} "
-              f"peak(excl. weights) {'x%.2f' % pk if pk is not None else 'n/a (CPU)'}")
+              f"peak(excl. weights) {'x%.2f' % pk if pk is not None else 'n/a (CUDA only)'}")
 
     save_json({"hardware": hw, "model": args.model, "device": str(model.device), "n_tokens": args.n_tokens, "n_decode": args.n_decode,
                "chunk_size": args.chunk_size, "dtype": str(model.dtype), "rows": rows},

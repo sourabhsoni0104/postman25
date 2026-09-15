@@ -19,6 +19,10 @@ def test_budget_during_attention(model, ids, policy, chunk):
     assert runner.peak_kv_bytes <= 2*3*2*24*16*4
     if policy == "streaming":
         assert all(lc.pos[0, :4].tolist() == [0, 1, 2, 3] for lc in runner.cache.layers)
+    if policy == "h2o":
+        # Heavy hitters must survive chunks as large as the budget.
+        oldest_recent = runner.cache.n_seen - 24
+        assert all((lc.pos < oldest_recent).any() for lc in runner.cache.layers)
 
 def test_layer_budgets(model, ids):
     runner = StreamingRunner(model, make_policy("h2o"), layer_budgets=[12, 24, 36], chunk_size=4)

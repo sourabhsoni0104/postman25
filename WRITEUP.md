@@ -12,6 +12,35 @@ The numerical tables, hardware details, attention summaries, and plots are in
 Individual retrieval responses, per-head retention, document hashes, complete
 loss traces, and parameters remain available for inspection.
 
+## Key measured findings
+
+All numbers are FP32 on Apple GPU and copied from the report.
+
+- **Sinks are real and content-insensitive.** On natural text, 30.5% of attention
+  mass lands on the first four keys, against 0.70% under causal uniform attention.
+  Random IDs (29.8%) and prose with a replaced prefix (30.4%) keep the effect;
+  shuffled prose lowers it to 23.0%. Token 0 receives 174× its uniform share,
+  and 90% of a query's mass covers 11.1% of available keys on average.
+- **Removing sinks, not a small budget, breaks the sliding window.** Full-cache
+  PPL is 17.69. At B=128 (3 MiB instead of 72 MiB), sink-aware reaches 21.83 and
+  heavy-hitter 21.70, while sliding reaches 157.4. Sliding at B=2048 is worst of
+  all (355.0): its scored suffix begins exactly where the window first drops the
+  sinks, and the loss trace shows a transient near 10³ before settling around 10².
+- **Heavy-hitter gives the best perplexity, not the best retrieval.** H2O has the
+  lowest PPL at every budget (18.68 vs 19.70 at B=512). Yet at B=256 it retrieves
+  0/6 passkeys versus 2/6 for sink-aware, and at B=1024 2/6 versus 4/6: halving
+  the recent window evicts a needle that no query has attended to yet. No
+  compressed budget below 2,048 retrieved a needle at depth 0.1 under any policy.
+- **Position handling must be consistent.** With identical retained needles,
+  recompute and absolute reach 16.70 and 16.71 post-eviction PPL with 6/6
+  retrieval; the stale negative control reaches 275.0 with 0/6.
+- **Compression saves decode time as well as memory.** At 4,096 tokens, bounded
+  caches decode in 0.28–0.53× the full-cache time per token. This is one
+  warmed-up run; an earlier run measured 0.43–0.81×, so treat timing as noisy.
+
+These counts come from six correlated trials per configuration; they show
+direction, not precise rates.
+
 ## 3.1 Model and correctness
 
 The manual Qwen2 forward reuses the Hugging Face embeddings, attention projections,

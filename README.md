@@ -90,7 +90,10 @@ Do not mix tiny smoke outputs with the measured result directory.
   query positions and exists only as a negative control.
 - Eviction reserves incoming space **before attention**, so every layer's
   materialized cache has at most its budget's entries. `chunk_size=32` is a
-  block approximation; use 1 for online eviction. The chunk is capped to fit.
+  block approximation; use 1 for online eviction. The chunk is capped so each
+  reservation keeps the policy's protected entries: the four sinks for streaming,
+  and at least half the budget for H2O, so a large chunk cannot erase every
+  heavy hitter. A budget of only a few entries can still leave no room for them.
 - `prefill()` retains only the final logits, and `feed_nll()` computes losses
   by chunk. Diagnostic `feed()` intentionally retains all logits.
 - Cache-byte measurements include K and V. Position/score metadata is reported

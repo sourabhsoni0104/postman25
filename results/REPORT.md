@@ -54,15 +54,15 @@ The independent rotation-identity regression test verifies the positional correc
 | Policy | Budget | Decode time relative to full | KV memory relative to full |
 |---|---:|---:|---:|
 | full | full | 1.000 | 1.000 |
-| sliding | 128 | 0.441 | 0.031 |
-| streaming | 128 | 0.430 | 0.031 |
-| h2o | 128 | 0.499 | 0.031 |
-| sliding | 512 | 0.444 | 0.124 |
-| streaming | 512 | 0.514 | 0.124 |
-| h2o | 512 | 0.559 | 0.124 |
-| sliding | 2048 | 0.809 | 0.496 |
-| streaming | 2048 | 0.593 | 0.496 |
-| h2o | 2048 | 0.582 | 0.496 |
+| sliding | 128 | 0.334 | 0.031 |
+| streaming | 128 | 0.295 | 0.031 |
+| h2o | 128 | 0.305 | 0.031 |
+| sliding | 512 | 0.279 | 0.124 |
+| streaming | 512 | 0.312 | 0.124 |
+| h2o | 512 | 0.329 | 0.124 |
+| sliding | 2048 | 0.533 | 0.496 |
+| streaming | 2048 | 0.315 | 0.496 |
+| h2o | 2048 | 0.405 | 0.496 |
 
 Single warmed-up timing run, synthetic repeated decode token; timings are descriptive.
 GPU/CPU workspaces, weights, and allocator reservations are not KV memory.
