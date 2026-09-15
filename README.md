@@ -1,4 +1,4 @@
-# Attention-Aware KV Cache Compression
+# Attention-Aware KV Cache Compression(Only Readme done by Claude-Code)
 
 A runnable solution to task 3 using **Qwen2.5-0.5B-Instruct**, real model weights,
 a cache we can inspect, and measured attention, perplexity, retrieval, and memory.
